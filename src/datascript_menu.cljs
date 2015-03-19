@@ -134,12 +134,12 @@
               old-queries      (::queries state #{})
               [dom next-state] (render-fn state)
               new-queries      @*queries*]
-          (doseq [[query ref] old-queries]
-            (when-not (contains? new-queries query)
-              (unbind conn query [])))
-          (doseq [query new-queries]
-            (when-not (contains? old-queries query)
-              (bind conn query []
+          (doseq [[query inputs] old-queries]
+            (when-not (contains? new-queries [query inputs])
+              (unbind conn query inputs)))
+          (doseq [[query inputs] new-queries]
+            (when-not (contains? old-queries [query inputs])
+              (bind conn query inputs
                     (fn [_]
                       (rum/request-render comp)))))
           [dom (assoc next-state ::queries new-queries)]))))
@@ -149,14 +149,15 @@
       (unbind conn query []))
     (dissoc state ::queries))})
 
-(defn query [query]
-  (vswap! *queries* conj query)
+(defn query [query & input]
+  (vswap! *queries* conj [query input])
   (mapcat identity (d/q query @conn)))
 
 (rum/defc position-view
   < rum/static (listen-for-mixin (fn [pid]
                                    [[:e :a] [pid :position/name]]))
   [p]
+  (print :test)
   [:li.position
    (:position/name p)
    [:span.id (:db/id p)]])
@@ -167,8 +168,9 @@
    [:span.id (:db/id order)]
    [:ul.positions
     (for [p (:order/position order)]
-      (rum/with-props position-view (:db/id p)
-        :rum/key (:db/id p)))]])
+      (position-view (:db/id p)
+       ;; :rum/key (:db/id p)
+                     ))]])
 
 (rum/defc person
   < rum/static (listen-for-mixin (fn [pid]
@@ -177,8 +179,9 @@
   [:.person
    (:guest/name guest)
    [:span.id (:db/id guest)]
-   (rum/with-props order (:guest/order guest)
-     :rum/key (get-in guest [:guest/order :db/id]))])
+   (order (:guest/order guest)
+    ;; :rum/key (get-in guest [:guest/order :db/id])
+          )])
 
 (rum/defc position-edit
   < rum/static (listen-for-mixin (fn [pid]
