@@ -49,8 +49,7 @@
                                  (mapv (juxt (partial d/entity db-before)
                                              (partial d/entity db-after)))
                                  (mapv (partial apply =))
-                                 (reduce #(and %1 %2))
-                                 (not)))
+                                 (reduce #(and %1 %2))))
                    ;; Only update if entity list has changed
                    (callback (apply d/q q db-after inputs)))))))
 
