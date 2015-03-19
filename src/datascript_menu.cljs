@@ -38,6 +38,9 @@
 (defn query-key [q inputs]
   (prn-str [q inputs]))
 
+(defn entity-exists? [db eid]
+  (get (set (mapv first (:eavt db))) eid))
+
 (defn bind
   [conn q inputs callback]
   (d/listen! conn (query-key q inputs)
@@ -46,10 +49,11 @@
                  (when (and (not-empty novelty)
                             (->> novelty
                                  (mapcat identity)
-                                 (mapv (juxt (partial d/entity db-before)
-                                             (partial d/entity db-after)))
+                                 (mapv (juxt (partial entity-exists? db-before)
+                                             (partial entity-exists? db-after)))
                                  (mapv (partial apply =))
-                                 (reduce #(and %1 %2))))
+                                 (reduce #(and %1 %2))
+                                 (not)))
                    ;; Only update if entity list has changed
                    (callback (apply d/q q db-after inputs)))))))
 
