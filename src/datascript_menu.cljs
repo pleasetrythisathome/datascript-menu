@@ -157,7 +157,6 @@
   < rum/static (listen-for-mixin (fn [pid]
                                    [[:e :a] [pid :position/name]]))
   [p]
-  (print :test)
   [:li.position
    (:position/name p)
    [:span.id (:db/id p)]])
@@ -168,9 +167,7 @@
    [:span.id (:db/id order)]
    [:ul.positions
     (for [p (:order/position order)]
-      (position-view (:db/id p)
-       ;; :rum/key (:db/id p)
-                     ))]])
+      (position-view (:db/id p)))]])
 
 (rum/defc person
   < rum/static (listen-for-mixin (fn [pid]
@@ -179,9 +176,7 @@
   [:.person
    (:guest/name guest)
    [:span.id (:db/id guest)]
-   (order (:guest/order guest)
-    ;; :rum/key (get-in guest [:guest/order :db/id])
-          )])
+   (order (:guest/order guest))])
 
 (rum/defc position-edit
   < rum/static (listen-for-mixin (fn [pid]
