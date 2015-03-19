@@ -191,7 +191,8 @@
   [:.page
    [:.guests
     [:h1 "Guests"]
-    (sorted-list person identity
+    (sorted-list person (comp :guest/name
+                              (partial d/entity @conn))
                  (query '[:find ?e
                           :where [?e :guest/name]]))]
    [:.menu
