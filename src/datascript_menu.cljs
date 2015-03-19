@@ -166,7 +166,8 @@
    [:span.id (:db/id order)]
    [:ul.positions
     (for [p (:order/position order)]
-      (position-view (:db/id p)))]])
+      (rum/with-props position-view (:db/id p)
+        :rum/key (:db/id p)))]])
 
 (rum/defc person < (listen-for-mixin (fn [pid]
                                         [[:e :a] [pid :guest/order]]))
@@ -174,7 +175,8 @@
   [:.person
    (:guest/name guest)
    [:span.id (:db/id guest)]
-   (order (:guest/order guest))])
+   (rum/with-props order (:guest/order guest)
+     :rum/key (get-in guest [:guest/order :db/id]))])
 
 (rum/defc position-edit < (listen-for-mixin (fn [pid]
                                               [[:e :a] [pid :db/id]]))
@@ -188,10 +190,11 @@
    [:span.id (:db/id position)]])
 
 (rum/defc sorted-list
-  [view sort-fn items]
+  [view sort-fn eids]
   [:div
-   (for [item (sort-by sort-fn items)]
-     (view item))])
+   (for [eid (sort-by sort-fn eids)]
+     (rum/with-props view eid
+       :rum/key eid))])
 
 (rum/defc page < query-reactive
   [conn]
