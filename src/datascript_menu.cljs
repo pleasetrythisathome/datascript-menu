@@ -66,14 +66,23 @@
 
 (def position-ids (map first (d/q '[:find ?e :where [?e :position/name]] @conn)))
 
-(dotimes [i 100]
-  (let [guests (repeatedly (+ (rand-int 4) 1)
-                           (fn [] {:guest/name (gen/gen-name)
-                                   :guest/order -1}))
-        order {:db/id -1
-               :order/id (+ 9999 (rand-int 90000))
-               :order/position (take (+ (rand-int 3) 1) (shuffle position-ids))}]
-    (d/transact! conn (into [order] guests))))
+(defn add-fixtures! [n]
+  (dotimes [i n]
+    (let [guests (repeatedly (+ (rand-int 4) 1)
+                             (fn [] {:guest/name (gen/gen-name)
+                                     :guest/order -1}))
+          order {:db/id -1
+                 :order/id (+ 9999 (rand-int 90000))
+                 :order/position (take (+ (rand-int 3) 1) (shuffle position-ids))}]
+      (d/transact! conn (into [order] guests)))))
+
+(defn do-every! [freq f]
+  (go-loop [tick (timeout 0)]
+    (<! tick)
+    (f)
+    (recur (timeout freq))))
+
+(do-every! 1000 (partial add-fixtures! 1))
 
 ;;;; Views
 
