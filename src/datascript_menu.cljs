@@ -153,8 +153,9 @@
   (vswap! *queries* conj query)
   (mapcat identity (d/q query @conn)))
 
-(rum/defc position-view < (listen-for-mixin (fn [pid]
-                                              [[:e :a] [pid :position/name]]))
+(rum/defc position-view
+  < rum/static (listen-for-mixin (fn [pid]
+                                   [[:e :a] [pid :position/name]]))
   [p]
   [:li.position
    (:position/name p)
@@ -169,8 +170,9 @@
       (rum/with-props position-view (:db/id p)
         :rum/key (:db/id p)))]])
 
-(rum/defc person < (listen-for-mixin (fn [pid]
-                                        [[:e :a] [pid :guest/order]]))
+(rum/defc person
+  < rum/static (listen-for-mixin (fn [pid]
+                                   [[:e :a] [pid :guest/order]]))
   [guest]
   [:.person
    (:guest/name guest)
@@ -178,8 +180,9 @@
    (rum/with-props order (:guest/order guest)
      :rum/key (get-in guest [:guest/order :db/id]))])
 
-(rum/defc position-edit < (listen-for-mixin (fn [pid]
-                                              [[:e :a] [pid :db/id]]))
+(rum/defc position-edit
+  < rum/static (listen-for-mixin (fn [pid]
+                                   [[:e :a] [pid :db/id]]))
   [position]
   [:.position-edit
    [:input {:type "text"
