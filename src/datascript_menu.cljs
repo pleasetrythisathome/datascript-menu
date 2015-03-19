@@ -80,13 +80,16 @@
                  :order/position (take (+ (rand-int 3) 1) (shuffle position-ids))}]
       (d/transact! conn (into [order] guests)))))
 
-(defn do-every! [freq f]
-  (go-loop [tick (timeout 0)]
+(defn do-every! [freq f n]
+  (go-loop [tick (timeout 0)
+            runs 1]
     (<! tick)
     (f)
-    (recur (timeout freq))))
+    (when-not (= runs n)
+      (recur (timeout freq) (inc runs)))))
 
-(do-every! 1000 (partial add-fixtures! 1))
+(do-every! 1000 (partial add-fixtures! 1) 10)
+;;(add-fixtures! 100 5)
 
 ;;;; Views
 
