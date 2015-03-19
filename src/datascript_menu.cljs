@@ -58,7 +58,6 @@
 
 (def position-ids (map first (d/q '[:find ?e :where [?e :position/name]] @conn)))
 
-
 (dotimes [i 100]
   (let [guests (repeatedly (+ (rand-int 4) 1)
                            (fn [] {:guest/name (gen/gen-name)
@@ -70,20 +69,30 @@
 
 ;;;; Views
 
-
 ;; Reusable mixin that subscribes to the part of DB
 (defn listen-for-mixin [path-fn]
-  {:did-mount
+  {:will-mount
    (fn [state]
-     (let [[args path] (apply path-fn (:rum/args state))
-           key         (rand)
-           comp        (:rum/react-component state)
-           callback    (fn [datom tx-data key] (rum/request-render comp))]
-       (listen-for! key args path callback)
-       (assoc state ::listen-path [key args path])))
+     (let [comp  (:rum/react-component state)
+           paths (for [eid (:rum/args state)]
+                   (let [[args path] (apply path-fn (:rum/args state))
+                         key         (rand)
+                         callback    (fn [datom tx-data key]
+                                       (rum/request-render comp))]
+                     (listen-for! key args path callback)
+                     [key args path]))]
+       (assoc state
+              ::listen-path paths)))
+   :wrap-render
+   (fn [render-fn]
+     (fn [state]
+       (-> state
+           (update :rum/args (partial map (partial d/entity @conn)))
+           (render-fn))))
    :will-unmount
    (fn [state]
-     (apply unlisten-for! (::listen-path state)))})
+     (doseq [path (::listen-paths state)]
+       (apply unlisten-for! path)))})
 
 (def ^:dynamic *queries*)
 
@@ -123,11 +132,11 @@
 
 (def position-view-mixin (listen-for-mixin (fn [pid] [[:e :a] [pid :position/name]]))) ;; concrete mixin
 
-(rum/defc position-view < position-view-mixin [pid]
-  (let [p (d/entity @conn pid)]
-    [:li.position
-     (:position/name p)
-     [:span.id (:db/id p)]]))
+(rum/defc position-view < position-view-mixin
+  [p]
+  [:li.position
+   (:position/name p)
+   [:span.id (:db/id p)]])
 
 (rum/defc order [order]
   [:.order
