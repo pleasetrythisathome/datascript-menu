@@ -41,10 +41,19 @@
 (defn bind
   [conn q inputs callback]
   (d/listen! conn (query-key q inputs)
-             (fn [{:keys [tx-data db-after]}]
+             (fn [{:keys [tx-data db-before db-after]}]
                (let [novelty (apply d/q q tx-data inputs)]
-                 (when (not-empty novelty) ;; Only update if query results have changed
+                 (when (and (not-empty novelty)
+                            (->> novelty
+                                 (mapcat identity)
+                                 (mapv (juxt (partial d/entity db-before)
+                                             (partial d/entity db-after)))
+                                 (mapv (partial apply =))
+                                 (reduce #(and %1 %2))
+                                 (not)))
+                   ;; Only update if entity list has changed
                    (callback (apply d/q q db-after inputs)))))))
+
 
 (defn unbind
   [conn q inputs]
@@ -74,21 +83,23 @@
   {:will-mount
    (fn [state]
      (let [comp  (:rum/react-component state)
-           paths (for [eid (:rum/args state)]
-                   (let [[args path] (apply path-fn (:rum/args state))
-                         key         (rand)
-                         callback    (fn [datom tx-data key]
-                                       (rum/request-render comp))]
-                     (listen-for! key args path callback)
-                     [key args path]))]
+           paths (doall
+                  (for [eid (:rum/args state)]
+                    (let [[args path] (apply path-fn (:rum/args state))
+                          key         (rand)
+                          callback    (fn [datom tx-data key]
+                                        (rum/request-render comp))]
+                      (listen-for! key args path callback)
+                      [key args path])))]
        (assoc state
               ::listen-path paths)))
    :wrap-render
    (fn [render-fn]
      (fn [state]
-       (-> state
-           (update :rum/args (partial map (partial d/entity @conn)))
-           (render-fn))))
+       (let [eids (:rum/args state)
+             entities (mapv (partial d/entity @conn) eids)
+             [dom next-state] (render-fn (assoc state :rum/args entities))]
+         [dom (assoc next-state :rum/args eids)])))
    :will-unmount
    (fn [state]
      (doseq [path (::listen-paths state)]
@@ -125,14 +136,10 @@
 
 (defn query [query]
   (vswap! *queries* conj query)
-  (let [db @conn]
-    (->> (d/q query db)
-         (mapv (comp (partial d/entity db)
-                     first)))))
+  (mapcat identity (d/q query @conn)))
 
-(def position-view-mixin (listen-for-mixin (fn [pid] [[:e :a] [pid :position/name]]))) ;; concrete mixin
-
-(rum/defc position-view < position-view-mixin
+(rum/defc position-view < (listen-for-mixin (fn [pid]
+                                              [[:e :a] [pid :position/name]]))
   [p]
   [:li.position
    (:position/name p)
@@ -146,13 +153,17 @@
     (for [p (:order/position order)]
       (position-view (:db/id p)))]])
 
-(rum/defc person [guest]
+(rum/defc person < (listen-for-mixin (fn [pid]
+                                        [[:e :a] [pid :guest/order]]))
+  [guest]
   [:.person
    (:guest/name guest)
    [:span.id (:db/id guest)]
    (order (:guest/order guest))])
 
-(rum/defc position-edit [position]
+(rum/defc position-edit < (listen-for-mixin (fn [pid]
+                                              [[:e :a] [pid :db/id]]))
+  [position]
   [:.position-edit
    [:input {:type "text"
             :value (:position/name position)
@@ -168,15 +179,17 @@
      (view item))])
 
 (rum/defc page < query-reactive
-  [db]
+  [conn]
   [:.page
    [:.guests
     [:h1 "Guests"]
-    (sorted-list person :guest/name (query '[:find ?e
-                                             :where [?e :guest/name]]))]
+    (sorted-list person identity
+                 (query '[:find ?e
+                          :where [?e :guest/name]]))]
    [:.menu
     [:h1 "Menu"]
-    (sorted-list position-edit :db/id (query '[:find ?e
-                                               :where [?e :position/name]]))]])
+    (sorted-list position-edit identity
+                 (query '[:find ?e
+                          :where [?e :position/name]]))]])
 
-(rum/mount (page @conn) (.-body js/document))
+(rum/mount (page conn) (.-body js/document))
