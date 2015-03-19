@@ -1,7 +1,10 @@
 (ns datascript-menu
+    (:require-macros
+   [cljs.core.async.macros :refer [go go-loop]])
   (:require
    [clojure.string :as str]
    [sablono.core :as s :include-macros true]
+   [cljs.core.async :refer [<! timeout]]
    [datascript :as d]
    [rum :include-macros true]
    [datascript-menu.gen :as gen]))
@@ -32,6 +35,21 @@
                      [key callback] (get-in m fragments)]
                (callback datom tx-data key))))
 
+(defn query-key [q inputs]
+  (prn-str [q inputs]))
+
+(defn bind
+  [conn q inputs callback]
+  (d/listen! conn (query-key q inputs)
+             (fn [{:keys [tx-data db-after]}]
+               (let [novelty (apply d/q q tx-data inputs)]
+                 (when (not-empty novelty) ;; Only update if query results have changed
+                   (callback (apply d/q q db-after inputs)))))))
+
+(defn unbind
+  [conn q inputs]
+  (d/unlisten! conn (query-key q inputs)))
+
 ;;;; Fixtures
 
 (d/transact! conn (map (fn [[n d]] {:position/name n
@@ -39,6 +57,7 @@
                        gen/positions))
 
 (def position-ids (map first (d/q '[:find ?e :where [?e :position/name]] @conn)))
+
 
 (dotimes [i 100]
   (let [guests (repeatedly (+ (rand-int 4) 1)
@@ -66,25 +85,41 @@
    (fn [state]
      (apply unlisten-for! (::listen-path state)))})
 
-(def query-mixin
-  {:will-mount
-   (fn [state]
-     (print :mount)
-     (assoc state :query/args (:rum/args state)))
-   :wrap-render
-   (fn [render-fn]
-     (fn [state]
-       (let [[query db & inputs] (:query/args state)
-             entities (->> (apply d/q query db inputs)
-                           (mapv (comp (partial d/entity db)
-                                       first)))]
-         (-> state
-             (assoc :rum/args [entities])
-             (render-fn)))))
-   :will-unmount
-   (fn [state]
-     ;;(apply unlisten-for! (::listen-path state))
-     )})
+(def ^:dynamic *queries*)
+
+(def query-reactive
+  {:transfer-state
+  (fn [old new]
+    (assoc new ::queries (::queries old)))
+  :wrap-render
+  (fn [render-fn]
+    (fn [state]
+      (binding [*queries*      (volatile! #{})]
+        (let [comp             (:rum/react-component state)
+              old-queries      (::queries state #{})
+              [dom next-state] (render-fn state)
+              new-queries      @*queries*]
+          (doseq [[query ref] old-queries]
+            (when-not (contains? new-queries query)
+              (unbind conn query [])))
+          (doseq [query new-queries]
+            (when-not (contains? old-queries query)
+              (bind conn query []
+                    (fn [_]
+                      (rum/request-render comp)))))
+          [dom (assoc next-state ::queries new-queries)]))))
+  :will-unmount
+  (fn [state]
+    (doseq [query (::queries state)]
+      (unbind conn query []))
+    (dissoc state ::queries))})
+
+(defn query [query]
+  (vswap! *queries* conj query)
+  (let [db @conn]
+    (->> (d/q query db)
+         (mapv (comp (partial d/entity db)
+                     first)))))
 
 (def position-view-mixin (listen-for-mixin (fn [pid] [[:e :a] [pid :position/name]]))) ;; concrete mixin
 
@@ -108,13 +143,6 @@
    [:span.id (:db/id guest)]
    (order (:guest/order guest))])
 
-(rum/defc guest-list < query-mixin
-  [guests]
-  [:.guests
-   [:h1 "Guests"]
-   (for [guest (sort-by :guest/name guests)]
-     (person guest))])
-
 (rum/defc position-edit [position]
   [:.position-edit
    [:input {:type "text"
@@ -124,14 +152,22 @@
                            (d/transact! conn [[:db/add (:db/id position) :position/name new-val]])))}]
    [:span.id (:db/id position)]])
 
-(rum/defc page [db]
+(rum/defc sorted-list
+  [view sort-fn items]
+  [:div
+   (for [item (sort-by sort-fn items)]
+     (view item))])
+
+(rum/defc page < query-reactive
+  [db]
   [:.page
-   (guest-list '[:find ?e
-                 :where [?e :guest/name]]
-               db)
+   [:.guests
+    [:h1 "Guests"]
+    (sorted-list person :guest/name (query '[:find ?e
+                                             :where [?e :guest/name]]))]
    [:.menu
     [:h1 "Menu"]
-    #_(for [[eid] (sort (d/q '[:find ?e :where [?e :position/name]] db))]
-      (position-edit (d/entity db eid)))]])
+    (sorted-list position-edit :db/id (query '[:find ?e
+                                               :where [?e :position/name]]))]])
 
 (rum/mount (page @conn) (.-body js/document))
