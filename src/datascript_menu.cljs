@@ -167,7 +167,8 @@
    [:span.id (:db/id order)]
    [:ul.positions
     (for [p (:order/position order)]
-      (position-view (:db/id p)))]])
+      (rum/with-props position-view (:db/id p)
+        :rum/key (:db/id p)))]])
 
 (rum/defc person
   < rum/static (listen-for-mixin (fn [pid]
@@ -176,7 +177,8 @@
   [:.person
    (:guest/name guest)
    [:span.id (:db/id guest)]
-   (order (:guest/order guest))])
+   (rum/with-props order (:guest/order guest)
+     :rum/key (get-in guest [:guest/order :db/id]))])
 
 (rum/defc position-edit
   < rum/static (listen-for-mixin (fn [pid]
