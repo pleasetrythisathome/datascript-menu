@@ -108,17 +108,20 @@
                       [key args path])))]
        (assoc state
               ::listen-path paths)))
-   :wrap-render
+   :will-unmount
+   (fn [state]
+     (doseq [path (::listen-paths state)]
+       (apply unlisten-for! path)))})
+
+;; mixin that wraps render to transform passed eids to entities
+(def ids->entities
+  {:wrap-render
    (fn [render-fn]
      (fn [state]
        (let [eids (:rum/args state)
              entities (mapv (partial d/entity @conn) eids)
              [dom next-state] (render-fn (assoc state :rum/args entities))]
-         [dom (assoc next-state :rum/args eids)])))
-   :will-unmount
-   (fn [state]
-     (doseq [path (::listen-paths state)]
-       (apply unlisten-for! path)))})
+         [dom (assoc next-state :rum/args eids)])))})
 
 (def ^:dynamic *queries*)
 
@@ -154,14 +157,17 @@
   (mapcat identity (d/q query @conn)))
 
 (rum/defc position-view
-  < rum/static (listen-for-mixin (fn [pid]
-                                   [[:e :a] [pid :position/name]]))
+  < rum/static
+  ids->entities
+  (listen-for-mixin (fn [pid] [[:e :a] [pid :position/name]]))
   [p]
   [:li.position
    (:position/name p)
    [:span.id (:db/id p)]])
 
-(rum/defc order [order]
+(rum/defc order
+  < rum/static
+  [order]
   [:.order
    (str "Order #" (:order/id order))
    [:span.id (:db/id order)]
@@ -171,8 +177,9 @@
         :rum/key (:db/id p)))]])
 
 (rum/defc person
-  < rum/static (listen-for-mixin (fn [pid]
-                                   [[:e :a] [pid :guest/order]]))
+  < rum/static
+  ids->entities
+  (listen-for-mixin (fn [pid] [[:e] [pid]]))
   [guest]
   [:.person
    (:guest/name guest)
@@ -181,8 +188,9 @@
      :rum/key (get-in guest [:guest/order :db/id]))])
 
 (rum/defc position-edit
-  < rum/static (listen-for-mixin (fn [pid]
-                                   [[:e :a] [pid :db/id]]))
+  < rum/static
+  ids->entities
+  (listen-for-mixin (fn [pid] [[:e :a] [pid :position/name]]))
   [position]
   [:.position-edit
    [:input {:type "text"
@@ -199,7 +207,8 @@
      (rum/with-props view eid
        :rum/key eid))])
 
-(rum/defc page < query-reactive
+(rum/defc page
+  < query-reactive
   [conn]
   [:.page
    [:.guests
