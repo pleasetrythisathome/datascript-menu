@@ -39,14 +39,14 @@
   (prn-str [q inputs]))
 
 (defn entity-exists? [db eid]
-  (get (set (mapv first (:eavt db))) eid))
+  (seq (d/datoms db :eavt eid)))
 
 (defn bind
   [conn q inputs callback]
   (d/listen! conn (query-key q inputs)
              (fn [{:keys [tx-data db-before db-after]}]
                (let [novelty (apply d/q q tx-data inputs)]
-                 (when (and (not-empty novelty)
+                 (when (and (seq novelty)
                             (->> novelty
                                  (mapcat identity)
                                  (mapv (juxt (partial entity-exists? db-before)
